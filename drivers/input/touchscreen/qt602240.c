@@ -2396,15 +2396,182 @@ unsigned int touch_state_val=0;
 EXPORT_SYMBOL(touch_state_val);
 
 #if USE_TS_TA_DETECT_CHANGE_REG 
-static bool touchscreen_power_state_on = 0;
+static int qt602240_alive = 0; /* 1: active, 0: sleep */
+static int need_to_change_sensitivity = 0; /* try to change sensitivity if set */
+static int status_ta_on_resume = 0; 
+#if defined (USE_TS_TVOUT_35PI_DETECT_CHANGE_REG)
+static int status_35pi_on_resume = 0; 
+#endif
+#endif
 
-static int set_tsp_threshhold(void)
+#if defined (USE_TS_TVOUT_35PI_DETECT_CHANGE_REG)
+int set_tsp_for_tvout_35pi_detect_exec(int state)
 {
 	uint16_t object_address;
-	uint8_t *tmp;
-	uint8_t status;
+    	uint8_t *tmp;
+    	uint8_t status;
 
-	object_address = get_object_address(TOUCH_MULTITOUCHSCREEN_T9, 0);
+	printk(KERN_INFO "[TSP] (%s) state = [%d]\n", __func__, state);
+
+	if ( last_status_of_tsp_for_ta_detect == 1)	return -1;
+	
+	if (qt_initial_ok == 0) return 1;		
+	
+	disable_irq(qt602240->client->irq);
+	if(state)
+      {
+		touchscreen_config.tchthr = 55;
+		noise_suppression_config.noisethr = 20;		   
+		touchscreen_config.blen = 16;
+
+		printk("[TSP] 3.5 Earjack or TV-Out Detect!!!\n");
+
+		object_address = get_object_address(TOUCH_MULTITOUCHSCREEN_T9, 0);
+
+		if (object_address == 0)
+		{
+		    	printk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 object_address : %d\n", __LINE__);
+			enable_irq(qt602240->client->irq);
+			return -1;
+		}
+		tmp= &touchscreen_config.tchthr;
+		status = write_mem(object_address+7, 1, tmp);	
+		
+		if (status == WRITE_MEM_FAILED)
+		{
+		    printk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 write_mem : %d\n", __LINE__);
+		}
+
+		object_address = get_object_address(TOUCH_MULTITOUCHSCREEN_T9, 0);
+
+		if (object_address == 0)
+		{
+		    	printk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 object_address : %d\n", __LINE__);
+			enable_irq(qt602240->client->irq);
+			return -1;
+		}
+		tmp= &touchscreen_config.blen;
+		status = write_mem(object_address+6, 1, tmp);	
+		
+		if (status == WRITE_MEM_FAILED)
+		{
+		    printk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 write_mem : %d\n", __LINE__);
+		}
+
+		object_address = get_object_address(PROCG_NOISESUPPRESSION_T22, 0);
+
+		if (object_address == 0)
+		{
+		    	printk("\n[TSP][ERROR] PROCG_NOISESUPPRESSION_T22 object_address : %d\n", __LINE__);
+			enable_irq(qt602240->client->irq);
+			return -1;
+		}
+		tmp= &noise_suppression_config.noisethr ;
+		status = write_mem(object_address+8, 1, tmp);	
+		
+		if (status == WRITE_MEM_FAILED)
+		{
+		    	printk("\n[TSP][ERROR] PROCG_NOISESUPPRESSION_T22 write_mem : %d\n", __LINE__);
+		}	
+		
+        }
+        else
+        {
+		   touchscreen_config.tchthr = 40;
+		   noise_suppression_config.noisethr = 30;		   
+		   touchscreen_config.blen = 0x21;
+
+		   printk("[TSP] 3.5 Earjack or TV-Out NON-Detect!!!\n");
+
+		object_address = get_object_address(TOUCH_MULTITOUCHSCREEN_T9, 0);
+
+		if (object_address == 0)
+		{
+		    	printk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 object_address : %d\n", __LINE__);
+			enable_irq(qt602240->client->irq);
+			return -1;
+		}
+		tmp= &touchscreen_config.tchthr;
+		status = write_mem(object_address+7, 1, tmp);	
+		
+		if (status == WRITE_MEM_FAILED)
+		{
+		    	printk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 write_mem : %d\n", __LINE__);
+		}
+
+		object_address = get_object_address(TOUCH_MULTITOUCHSCREEN_T9, 0);
+		
+		if (object_address == 0)
+		{
+			printk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 object_address : %d\n", __LINE__);
+			enable_irq(qt602240->client->irq);
+			return -1;
+		}
+		tmp= &touchscreen_config.blen;
+		status = write_mem(object_address+6, 1, tmp);
+		
+		if (status == WRITE_MEM_FAILED)
+		{
+		    	printk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 write_mem : %d\n", __LINE__);
+		}
+
+		object_address = get_object_address(PROCG_NOISESUPPRESSION_T22, 0);
+
+		if (object_address == 0)
+		{
+		    	printk("\n[TSP][ERROR] PROCG_NOISESUPPRESSION_T22 object_address : %d\n", __LINE__);
+			enable_irq(qt602240->client->irq);
+			return -1;
+		}
+		tmp= &noise_suppression_config.noisethr ;
+		status = write_mem(object_address+8, 1, tmp);	
+		
+		if (status == WRITE_MEM_FAILED)
+		{
+		    	printk("\n[TSP][ERROR] PROCG_NOISESUPPRESSION_T22 write_mem : %d\n", __LINE__);
+		}	
+        }        
+
+	enable_irq(qt602240->client->irq);
+	return 1;
+}
+
+int set_tsp_for_tvout_35pi_detect(int state)
+{
+	//printk(KERN_INFO "[TSP] (%s) state = [%d]\n", __func__, state);
+
+	status_35pi_on_resume = state;
+
+	if ( qt602240_alive )
+		set_tsp_for_tvout_35pi_detect_exec(state);
+	else
+		need_to_change_sensitivity = 1;
+
+	return 0;
+}
+EXPORT_SYMBOL(set_tsp_for_tvout_35pi_detect);
+#endif
+
+#if USE_TS_TA_DETECT_CHANGE_REG 
+int set_tsp_for_ta_detect_exec(int state)
+{
+    uint16_t object_address;
+    uint8_t *tmp;
+    uint8_t status;
+
+    printk(KERN_INFO "[TSP] (%s) state = [%d]\n", __func__, state);
+
+    #if defined(CONFIG_S5PC110_HAWK_BOARD)
+    last_status_of_tsp_for_ta_detect = state;
+    #endif
+
+    if(state) {
+		touchscreen_config.tchthr = 75;
+		noise_suppression_config.noisethr = 20;		   
+
+        dprintk("[TSP] TA Detect!!!\n");
+
+        object_address = get_object_address(TOUCH_MULTITOUCHSCREEN_T9, 0);
 
         if (object_address == 0) {
             dprintk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 object_address : %d\n", __LINE__);
@@ -2430,28 +2597,55 @@ static int set_tsp_threshhold(void)
             dprintk("\n[TSP][ERROR] PROCG_NOISESUPPRESSION_T22 write_mem : %d\n", __LINE__);
         }    
         
-	return 1;
-}
+    } else {
+		   touchscreen_config.tchthr = 40;
+		   noise_suppression_config.noisethr = 30;		   
 
+        dprintk("[TSP] TA NON-Detect!!!\n");
+
+        object_address = get_object_address(TOUCH_MULTITOUCHSCREEN_T9, 0);
+
+        if (object_address == 0) {
+            dprintk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 object_address : %d\n", __LINE__);
+            return -1;
+        }
+        tmp= &touchscreen_config.tchthr;
+        status = write_mem(object_address+7, 1, tmp);    
+        
+        if (status == WRITE_MEM_FAILED) {
+            dprintk("\n[TSP][ERROR] TOUCH_MULTITOUCHSCREEN_T9 write_mem : %d\n", __LINE__);
+        }
+
+        object_address = get_object_address(PROCG_NOISESUPPRESSION_T22, 0);
+
+        if (object_address == 0) {
+            dprintk("\n[TSP][ERROR] PROCG_NOISESUPPRESSION_T22 object_address : %d\n", __LINE__);
+            return -1;
+        }
+        tmp= &noise_suppression_config.noisethr ;
+        status = write_mem(object_address+8, 1, tmp);    
+        
+        if (status == WRITE_MEM_FAILED) {
+            dprintk("\n[TSP][ERROR] PROCG_NOISESUPPRESSION_T22 write_mem : %d\n", __LINE__);
+        }    
+    }        
+
+    return 1;
+}
 int set_tsp_for_ta_detect(int state)
 {
-	int ret = 1;
+	printk(KERN_INFO "[TSP] (%s) state = [%d]\n", __func__, state);
 
-	if(state) {
-		touchscreen_config.tchthr = 70;
-		noise_suppression_config.noisethr = 20;
-		printk(KERN_DEBUG "[TSP] TA Detect!!!\n");
-	} else {
-		touchscreen_config.tchthr = 40;
-		noise_suppression_config.noisethr = 30;
-		printk(KERN_DEBUG "[TSP] TA NON-Detect!!!\n");
-	}
+	status_ta_on_resume = state;
 
-	if (touchscreen_power_state_on)
-		ret = set_tsp_threshhold();
-	
-	return ret;
+	if ( qt602240_alive )
+		set_tsp_for_ta_detect_exec(state);
+	else 		
+		need_to_change_sensitivity = 1; 	
+
+	return 0;
 }
+
 EXPORT_SYMBOL(set_tsp_for_ta_detect);
 #endif
 
@@ -2487,6 +2681,8 @@ void TSP_forced_release_forOKkey(void)
 {
     int i;
     int temp_value=0;
+    
+    printk(KERN_DEBUG "[TSP] forced release for keys \n");
 
     if (qt_initial_ok == 0)
         return;
@@ -2569,19 +2765,26 @@ void  get_message(void)
             }    
             
             if(quantum_msg[0] < 2  || quantum_msg[0] >= 12) {
-            
-                dprintk("[TSP] msg id =  %x %x %x %x %x %x %x %x %x\n", quantum_msg[0], quantum_msg[1], quantum_msg[2],\
-                     quantum_msg[3], quantum_msg[4], quantum_msg[5], quantum_msg[6], quantum_msg[7], quantum_msg[8]);
+
+	          if ( quantum_msg[0] != 0xc ) { /* Do not print out tsp key log, of which key message is start with 0xc */
+	                printk(KERN_DEBUG "[TSP] msg id =  %x %x %x %x %x %x %x %x %x\n", quantum_msg[0], quantum_msg[1], quantum_msg[2],\
+      	               quantum_msg[3], quantum_msg[4], quantum_msg[5], quantum_msg[6], quantum_msg[7], quantum_msg[8]);
+ 	          }
 
                 if((quantum_msg[0] == 1)&&((quantum_msg[1]&0x10) == 0x10)) {
                     dprintk(" [TSP] quantum_msg[0] = 1 and quantum_msg[1] = 0x10  cal_check_flag=1\n");
                 }
-                else if((quantum_msg[0] == 1) && ((quantum_msg[1]&0x10)==0)) {
+                else if((quantum_msg[0] == 1) && ((quantum_msg[1]&0x10)==0) && (quantum_msg[1] != 0x40)) {
                     dprintk(" [TSP] quantum_msg[0] = 1 and quantum_msg[1] = 0x00  cal_check_flag=2\n");
                     if(touch_message_flag && (cal_check_flag/*==2*/)) {
                         check_chip_calibration(1);
                     }
-                }
+                } else if((quantum_msg[0] == 1) && (quantum_msg[1] == 0x40)) {
+				dprintk(" [TSP] overflow !! \n");				
+				TSP_forced_release_forOKkey(); 	/* release all finger */
+				reset_chip();						/* try to soft reset */				
+				msleep(65);							/* wait for soft reset */
+			}
 
                 if ((quantum_msg[0] ==  14) ||(quantum_msg[0] == 0) ||(quantum_msg[0] == 0xFF)) {
                     if(touch_message_flag && (cal_check_flag/*==2*/)) {
@@ -3015,9 +3218,6 @@ int qt602240_probe(struct i2c_client *client,
   set_irq_type(IRQ_TOUCH_INT, IRQ_TYPE_LEVEL_LOW); // IRQ_TYPE_EDGE_FALLING);
     s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_SFN(0xf));
 
-    touchscreen_power_state_on = 1;
-    set_tsp_threshhold();
-
     ret = request_threaded_irq(qt602240->client->irq, NULL,  qt602240_irq_handler,  IRQF_TRIGGER_LOW | IRQF_ONESHOT, "qt602240 irq", qt602240);
     if (ret == 0) {
         dprintk("[TSP] qt602240_probe: Start touchscreen %s\n", qt602240->input_dev->name);
@@ -3036,8 +3236,16 @@ int qt602240_probe(struct i2c_client *client,
 #endif    /* CONFIG_HAS_EARLYSUSPEND */
 
     qt_initial_ok = 1;
-
-
+#if USE_TS_TA_DETECT_CHANGE_REG 
+	qt602240_alive = 1; /* 1: active, 0: sleep */
+	if ( need_to_change_sensitivity ) {		
+		set_tsp_for_ta_detect_exec(status_ta_on_resume);
+		#if defined (USE_TS_TVOUT_35PI_DETECT_CHANGE_REG)
+		set_tsp_for_tvout_35pi_detect_exec(status_35pi_on_resume);
+		#endif
+		need_to_change_sensitivity = 0;
+	}
+#endif
     return 0;
 
 err_input_register_device_failed:
@@ -3071,6 +3279,9 @@ static int qt602240_suspend(struct i2c_client *client, pm_message_t mesg)
     int i=0;
 
     ENTER_FUNC;
+#if USE_TS_TA_DETECT_CHANGE_REG 
+	qt602240_alive = 0; /* 1: active, 0: sleep */
+#endif
 
 
     /* Set power config. */
@@ -3115,6 +3326,17 @@ static int qt602240_resume(struct i2c_client *client)
     good_check_flag=0;
 
     calibrate_chip();
+#if USE_TS_TA_DETECT_CHANGE_REG 
+	qt602240_alive = 1; /* 1: active, 0: sleep */
+
+	if ( need_to_change_sensitivity ) {
+		set_tsp_for_ta_detect_exec(status_ta_on_resume);
+		#if defined (USE_TS_TVOUT_35PI_DETECT_CHANGE_REG)
+		set_tsp_for_tvout_35pi_detect_exec(status_35pi_on_resume);
+		#endif
+		need_to_change_sensitivity = 0;
+	}
+#endif
     LEAVE_FUNC;
     return 0;
 
@@ -3129,8 +3351,10 @@ static void qt602240_early_suspend(struct early_suspend *h)
 
     ENTER_FUNC;
     disable_irq(qt602240->client->irq);
-
-    touchscreen_power_state_on = 0;
+    
+#if USE_TS_TA_DETECT_CHANGE_REG 
+	qt602240_alive = 0; /* 1: active, 0: sleep */
+#endif
 
     /* Set power config. */
     /* Set Idle Acquisition Interval to 32 ms. */
@@ -3145,13 +3369,14 @@ static void qt602240_early_suspend(struct early_suspend *h)
     }
 
 #ifdef _SUPPORT_MULTITOUCH_
+    TSP_forced_release_forOKkey();
     for (i=0; i<MAX_USING_FINGER_NUM ; i++){
         fingerInfo[i].pressure = -1;
         }
     touch_state_val=0;
 #endif
-    qt_timer_state=0;
 
+    qt_timer_state=0;
     /*reset the gpio's for the sleep configuration*/
     s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_INPUT);
     s3c_gpio_setpull(GPIO_TOUCH_INT, S3C_GPIO_PULL_DOWN);
@@ -3170,7 +3395,7 @@ static void qt602240_late_resume(struct early_suspend *h)
     gpio_set_value(GPIO_TOUCH_EN, 1);
     msleep(70);
     s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_SFN(0xf));
-    s3c_gpio_setpull(GPIO_TOUCH_INT, S3C_GPIO_PULL_UP);
+    s3c_gpio_setpull(GPIO_TOUCH_INT, S3C_GPIO_PULL_NONE);
 
     if ( (ret = write_power_config(power_config)) != CFG_WRITE_OK) {
         /* "Power config write failed!\n" */
@@ -3180,19 +3405,32 @@ static void qt602240_late_resume(struct early_suspend *h)
             if ( (ret = write_power_config(power_config)) == CFG_WRITE_OK)
                 break;
         }
+//NAGSM_Android_SEL_Kernel_20110421
+		if( i >= 10)
+			return;
     }
     //hugh 0312
     good_check_flag=0;
 
     msleep(20);
+
+
     calibrate_chip();
-
-    touchscreen_power_state_on = 1;
-    set_tsp_threshhold();
-
+#if USE_TS_TA_DETECT_CHANGE_REG 
+	qt602240_alive = 1; /* 1: active, 0: sleep */
+	
+	if ( need_to_change_sensitivity ) {
+		set_tsp_for_ta_detect_exec(status_ta_on_resume);
+		#if defined (USE_TS_TVOUT_35PI_DETECT_CHANGE_REG)
+		set_tsp_for_tvout_35pi_detect_exec(status_35pi_on_resume);
+		#endif
+		need_to_change_sensitivity = 0;
+	}
+#endif
     enable_irq(qt602240->client->irq);
-    
+
     LEAVE_FUNC;
+	return; //NAGSM_Android_SEL_Kernel_20110421
 }
 #endif    // End of USE_TSP_EARLY_SUSPEND
 
@@ -4794,9 +5032,6 @@ int __init qt602240_init(void)
     gpio_set_value(GPIO_TOUCH_EN, 1);
     msleep(70);
 
-	int tint = GPIO_TOUCH_INT;
-	s3c_gpio_cfgpin(tint, S3C_GPIO_INPUT);
-	s3c_gpio_setpull(tint, S3C_GPIO_PULL_UP);
     qt602240 = kzalloc(sizeof(struct qt602240_data), GFP_KERNEL);
     if (qt602240 == NULL) {
         return -ENOMEM;
